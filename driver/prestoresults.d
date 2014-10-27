@@ -24,7 +24,9 @@ import odbc.odbcinst;
 import presto.client.queryresults : ColumnMetadata;
 
 import presto.odbcdriver.bindings : OdbcResult, OdbcResultRow;
-import presto.odbcdriver.util : dllEnforce, logMessage;
+import presto.odbcdriver.util : dllEnforce, logMessage, makeWithoutGC;
+
+import presto.client.statementclient : StatementClient;
 
 void addToPrestoResultRow(JSONValue columnData, PrestoResultRow result, string resultDataType) {
     final switch (columnData.type) {
@@ -74,6 +76,12 @@ unittest {
 }
 
 final class PrestoResult : OdbcResult {
+    
+    this(StatementClient client){
+        this.client_ = client; 
+        preparePageData();    
+    }
+
     void addRow(PrestoResultRow r) {
         dllEnforce(r.numberOfColumns() != 0, "Row has at least 1 column");
         results_ ~= r;
@@ -81,16 +89,24 @@ final class PrestoResult : OdbcResult {
     }
 
     override bool empty() const {
-        return results_.empty;
+        return results_.empty() && client_.empty();
     }
 
     override inout(PrestoResultRow) front() inout {
+        logMessage("-------------front----------------");
+        logMessage(results_.length);
+
         assert(!empty);
-        return results_.front;
+        return results_.front();
     }
 
     override void popFront() {
         results_.popFront();
+        //  prepare next range data from client.
+        if(results_.empty() && !client_.empty()){
+            logMessage("=======get more data=========");
+            preparePageData();
+        }
     }
 
     override size_t numberOfColumns() {
@@ -108,9 +124,35 @@ final class PrestoResult : OdbcResult {
     }
 
 private:
+    StatementClient client_;
     PrestoResultRow[] results_;
     immutable(ColumnMetadata)[] columnMetadata_ = null;
     size_t numberOfColumns_ = 0;
+
+    void preparePageData(){
+        logMessage("=======preparePageData=========");
+
+        auto resultBatch = client_.front();
+        columnMetadata(resultBatch.columnMetadata);
+        foreach (ref row; resultBatch.data.array) {
+            auto dataRow = makeWithoutGC!PrestoResultRow();
+            foreach (i, ref columnData; row.array) {
+                addToPrestoResultRow(columnData, dataRow, columnMetadata_[i].type);
+            }
+            dllEnforce(dataRow.numberOfColumns() != 0, "Row has at least 1 column");
+            addRow(dataRow);
+        }
+        logMessage("results_.length = ", results_.length);
+        if(!client_.empty()){
+            client_.popFront();   
+        }
+        logMessage("nextURI--> ", resultBatch.nextURI);
+        logMessage("resultBatch.data.array.length--> ", resultBatch.data.array.length);
+        if(resultBatch.nextURI != "" && resultBatch.data.array.length == 0){
+            logMessage("No data in this request, try again..");
+            preparePageData();
+        }
+    }
 }
 
 final class PrestoResultRow : OdbcResultRow {

@@ -441,22 +441,22 @@ void SQLExecuteImpl(OdbcStatement statementHandle) {
         }
 
         auto client = runQuery(text(query));
-        auto result = makeWithoutGC!PrestoResult();
+        auto result = makeWithoutGC!PrestoResult(client);
         scope(exit) { latestOdbcResult = result;  }
         executedQuery = true;
         uint batchNumber;
-        foreach (resultBatch; client) {
-            logMessage("SQLExecute working on result batch", ++batchNumber);
-            result.columnMetadata = resultBatch.columnMetadata;
-            foreach (row; resultBatch.data.array) {
-                auto dataRow = makeWithoutGC!PrestoResultRow();
-                foreach (i, columnData; row.array) {
-                    addToPrestoResultRow(columnData, dataRow, result.columnMetadata[i].type);
-                }
-                dllEnforce(dataRow.numberOfColumns() != 0, "Row has at least 1 column");
-                result.addRow(dataRow);
-            }
-        }
+        //foreach (resultBatch; client) {
+        //    logMessage("SQLExecute working on result batch", ++batchNumber);
+        //    result.columnMetadata = resultBatch.columnMetadata;
+        //    foreach (row; resultBatch.data.array) {
+        //        auto dataRow = makeWithoutGC!PrestoResultRow();
+        //        foreach (i, columnData; row.array) {
+        //            addToPrestoResultRow(columnData, dataRow, result.columnMetadata[i].type);
+        //        }
+        //        dllEnforce(dataRow.numberOfColumns() != 0, "Row has at least 1 column");
+        //        result.addRow(dataRow);
+        //    }
+        //}
     }
 }
 
@@ -486,7 +486,7 @@ SQLRETURN bindDataFromColumns(OdbcStatement statementHandle, ColumnBinding[uint]
                 throw new OdbcException(statementHandle, StatusCode.GENERAL_ERROR,
                                         "Column "w ~ wtext(columnNumber) ~ " does not exist"w);
             }
-            logMessage("Binding data from column:", columnNumber);
+            //logMessage("Binding data from column:", columnNumber);
             dispatchOnSqlCType!(copyToOutput)(binding.columnType, row.dataAt(columnNumber), binding);
         }
     }
